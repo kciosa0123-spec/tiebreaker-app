@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>悩み無用?! - AI意思決定アシスタント</title>
+    
+    <!-- Scripts: React, Tailwind, Babel, Lucide, Framer Motion, GoogleAI -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/framer-motion@11.11.11/dist/framer-motion.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "@google/genai": "https://esm.run/@google/generative-ai"
+        }
+    }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;900&display=swap');
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #FDFCFB;
+            color: #1a1a1a;
+        }
+
+        .font-display {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import { GoogleGenerativeAI } from "@google/genai";
+        const { useState, useEffect, useRef } = React;
+        const { motion, AnimatePresence } = window.Motion;
+
+        // --- Icons Layout ---
+        const Icon = ({ name, className = "w-5 h-5", size = 20 }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current) {
+                    lucide.createIcons({
+                        targets: [iconRef.current]
+                    });
+                }
+            }, [name]);
+            return <i ref={iconRef} data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
+        };
+
+        // --- App Component ---
+        function App() {
+            const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+            const [showSettings, setShowSettings] = useState(!localStorage.getItem('gemini_api_key'));
+            const [context, setContext] = useState('');
+            const [analysis, setAnalysis] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState(null);
+
+            const saveApiKey = (key) => {
+                localStorage.setItem('gemini_api_key', key);
+                setApiKey(key);
+                setShowSettings(false);
+            };
+
+            const analyzeDecision = async (input) => {
+                if (!apiKey) {
+                    setShowSettings(true);
+                    return;
+                }
+
+                const genAI = new GoogleGenerativeAI(apiKey);
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+                const prompt = `Analyze the following decision dilemma and provide a professional, objective breakdown. 
+                IMPORTANT: Your response MUST be in the same language as the input dilemma (e.g., if the input is Japanese, respond in Japanese).
+                Dilemma: "${input}"
+                
+                Provide the output in valid JSON format following this schema:
+                {
+                  "title": "A concise title",
+                  "summary": "A brief overview",
+                  "pros": ["Pro 1", "Pro 2"],
+                  "cons": ["Con 1", "Con 2"],
+                  "swot": {
+                    "strengths": ["Internal strengths"],
+                    "weaknesses": ["Internal weaknesses"],
+                    "opportunities": ["External opportunities"],
+                    "threats": ["External threats"]
+                  },
+                  "recommendation": {
+                    "action": "The primary recommended course of action",
+                    "reasoning": "Explanation",
+                    "confidence": 85
+                  }
+                }`;
+
+                try {
+                    const result = await model.generateContent(prompt);
+                    const response = await result.response;
+                    const text = response.text();
+                    // Clean possible markdown JSON wrappers
+                    const jsonStr = text.replace(/```json\n?/, '').replace(/\n?```/, '').trim();
+                    return JSON.parse(jsonStr);
+                } catch (err) {
+                    throw err;
+                }
+            };
+
+            const handleAnalyze = async () => {
+                if (!context.trim()) return;
+                setIsLoading(true);
+                setError(null);
+                try {
+                    const result = await analyzeDecision(context);
+                    setAnalysis(result);
+                } catch (err) {
+                    setError('分析中にエラーが発生しました。APIキーが正しいか確認してください。');
+                    console.error(err);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const reset = () => {
+                setAnalysis(null);
+                setContext('');
+                setError(null);
+            };
+
+            return (
+                <div className="min-h-screen selection:bg-[#FF6321] selection:text-white">
+                    {/* Header */}
+                    <header className="p-6 md:p-8 flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-gray-100">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-white shadow-sm border border-gray-100 w-12 h-12 flex items-center justify-center rounded-[1.25rem] group hover:shadow-md transition-all">
+                                <span className="text-2xl font-black text-[#1a1a1a]">悶</span>
+                            </div>
+                            <h1 className="text-xl font-display font-black tracking-tight uppercase text-[#1a1a1a]">悩み無用?!</h1>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            {analysis && (
+                                <button onClick={reset} className="flex items-center gap-2 text-sm font-medium hover:text-[#FF6321] transition-colors">
+                                    <Icon name="rotate-ccw" size={16} />
+                                    <span>新しい相談</span>
+                                </button>
+                            )}
+                            <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                <Icon name="settings" size={20} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <main className="max-w-4xl mx-auto px-6 py-12 md:py-20">
+                        <AnimatePresence mode="wait">
+                            {!analysis && !isLoading ? (
+                                <motion.div key="input" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-12">
+                                    <div className="space-y-4">
+                                        <h2 className="text-4xl md:text-6xl font-display font-black uppercase leading-tight tracking-tight">
+                                            チャンスではなく、<br /> <span className="text-red-600">チョイス（選択）</span>が<br />人間の運命を決める
+                                        </h2>
+                                        <p className="text-xl text-gray-500 max-w-lg">
+                                            どんな悩みでもAIが多角的に分析し、あなたの意思決定をサポートします。
+                                        </p>
+                                    </div>
+
+                                    <div className="relative">
+                                        <textarea
+                                            value={context}
+                                            onChange={(e) => setContext(e.target.value)}
+                                            placeholder="例: 長年勤めた会社を辞めて、独立するか悩んでいます..."
+                                            className="w-full min-h-[200px] p-6 text-xl bg-white border-2 border-gray-200 rounded-3xl outline-none focus:border-[#FF6321] transition-all resize-none shadow-sm focus:shadow-xl"
+                                        />
+                                        <button
+                                            onClick={handleAnalyze}
+                                            disabled={!context.trim()}
+                                            className="absolute bottom-6 right-6 px-6 py-3 bg-[#1a1a1a] text-white rounded-full font-bold flex items-center gap-2 hover:bg-[#FF6321] disabled:opacity-50 transition-all group"
+                                        >
+                                            分析を開始
+                                            <Icon name="arrow-right" className="group-hover:translate-x-1 transition-transform" />
+                                        </button>
+                                    </div>
+                                    {error && <p className="text-red-500 font-medium text-center">{error}</p>}
+                                </motion.div>
+                            ) : isLoading ? (
+                                <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-40 space-y-8">
+                                    <div className="w-24 h-24 border-4 border-[#FF6321] border-t-transparent rounded-full animate-spin"></div>
+                                    <div className="text-center space-y-2">
+                                        <h3 className="text-2xl font-bold uppercase tracking-widest">分析中...</h3>
+                                        <p className="text-gray-500">可能性を計算し、リスクを評価しています</p>
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <motion.div key="results" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-16">
+                                    {/* Final Recommendation */}
+                                    <section className="bg-[#1a1a1a] text-white p-10 rounded-[40px] space-y-8 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-64 h-64 bg-[#FF6321] blur-[120px] opacity-30 -mr-32 -mt-32"></div>
+                                        <div className="relative z-10 space-y-6">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3 text-[#FF6321] font-bold uppercase tracking-[0.2em] text-xs">
+                                                    <Icon name="target" size={16} />
+                                                    最終推奨アクション
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold uppercase opacity-60 tracking-widest">AI信頼度:</span>
+                                                    <span className="text-xl font-black text-[#FF6321]">{analysis.recommendation.confidence}%</span>
+                                                </div>
+                                            </div>
+                                            <h3 className="text-3xl md:text-4xl font-display font-black uppercase text-white">{analysis.recommendation.action}</h3>
+                                            <div className="h-px bg-white/10 w-full"></div>
+                                            <p className="text-lg text-gray-300 leading-relaxed font-medium">{analysis.recommendation.reasoning}</p>
+                                        </div>
+                                    </section>
+
+                                    {/* Reports */}
+                                    <div className="space-y-4 border-b border-gray-200 pb-12">
+                                        <div className="flex items-center gap-3 text-[#FF6321] font-bold uppercase tracking-widest text-sm">
+                                            <Icon name="scale" size={16} /> 分析レポート
+                                        </div>
+                                        <h2 className="text-4xl md:text-5xl font-display font-black uppercase text-[#1a1a1a]">{analysis.title}</h2>
+                                        <p className="text-xl text-gray-600 leading-relaxed">{analysis.summary}</p>
+                                    </div>
+
+                                    <div className="grid md:grid-cols-2 gap-8">
+                                        <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                                            <div className="flex items-center gap-2 text-green-600 font-bold uppercase tracking-wider">
+                                                <Icon name="plus-circle" /> メリット
+                                            </div>
+                                            <ul className="space-y-4">
+                                                {analysis.pros.map((p, i) => <li key={i} className="flex gap-3 text-gray-700">
+                                                    <span className="shrink-0 font-bold text-gray-300">0{i+1}</span>{p}
+                                                </li>)}
+                                            </ul>
+                                        </div>
+                                        <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                                            <div className="flex items-center gap-2 text-red-500 font-bold uppercase tracking-wider">
+                                                <Icon name="minus-circle" /> デメリット
+                                            </div>
+                                            <ul className="space-y-4">
+                                                {analysis.cons.map((c, i) => <li key={i} className="flex gap-3 text-gray-700">
+                                                    <span className="shrink-0 font-bold text-gray-300">0{i+1}</span>{c}
+                                                </li>)}
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    {/* SWOT */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {[
+                                            { t: '強み', d: analysis.swot.strengths, c: 'bg-emerald-50 text-emerald-700', i: 'shield' },
+                                            { t: '弱み', d: analysis.swot.weaknesses, c: 'bg-amber-50 text-amber-700', i: 'alert-triangle' },
+                                            { t: '機会', d: analysis.swot.opportunities, c: 'bg-indigo-50 text-indigo-700', i: 'zap' },
+                                            { t: '脅威', d: analysis.swot.threats, c: 'bg-rose-50 text-rose-700', i: 'briefcase' }
+                                        ].map((s, idx) => (
+                                            <div key={idx} className={`${s.c} p-6 rounded-2xl space-y-4`}>
+                                                <div className="flex items-center gap-2 font-bold uppercase text-xs tracking-widest"><Icon name={s.i} size={14} />{s.t}</div>
+                                                <ul className="space-y-2 text-sm leading-relaxed font-medium">
+                                                    {s.d.map((p, pi) => <li key={pi}>• {p}</li>)}
+                                                </ul>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </main>
+
+                    {/* API Key Modal */}
+                    {showSettings && (
+                        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+                            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white w-full max-w-md p-8 rounded-[32px] shadow-2xl space-y-6 text-center">
+                                <h3 className="text-2xl font-black uppercase">Gemini APIキー設定</h3>
+                                <p className="text-gray-500 text-sm">
+                                    ローカルで実行するにはGoogle AI Studioで作成したAPIキーが必要です。<br />
+                                    キーはブラウザのLocalStorageに保存されます。
+                                </p>
+                                <input 
+                                    type="password" 
+                                    defaultValue={apiKey}
+                                    placeholder="AIzk..."
+                                    className="w-full p-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:border-[#FF6321]"
+                                    onBlur={(e) => saveApiKey(e.target.value)}
+                                />
+                                <button onClick={() => setShowSettings(false)} className="w-full py-4 bg-[#1a1a1a] text-white rounded-2xl font-bold hover:bg-[#FF6321] transition-all">
+                                    設定を閉じる
+                                </button>
+                                <a href="https://aistudio.google.com/app/apikey" target="_blank" className="block text-xs text-blue-500 underline">APIキーを無料で取得する</a>
+                            </motion.div>
+                        </div>
+                    )}
+
+                    <footer className="p-12 text-center text-gray-300">
+                        <p className="text-xs uppercase font-bold tracking-[0.3em]">Powered by Gemini API</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
